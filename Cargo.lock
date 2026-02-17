@@ -279,6 +279,7 @@ dependencies = [
  "anyhow",
  "argon2",
  "askama",
+ "async-trait",
  "chrono",
  "cookie",
  "dotenvy",

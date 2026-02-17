@@ -8,6 +8,7 @@ readme = "./README.md"
 anyhow = "1.0.101"
 argon2 = "0.5.3"
 askama = "0.15.4"
+async-trait = "0.1.89"
 chrono = { version = "0.4.43", features = ["serde"] }
 cookie = "0.18.1"
 dotenvy = "0.15.7"
