@@ -52,41 +52,35 @@ impl Writer for AppError {
         let (key, details) = match &self {
             Self::Salvo(e) => {
                 tracing::error!(error = ?e, "salvo error");
-                ("salvo_error", Some(format!("Unknown error happened in salvo.")))
+                ("errors.salvo_error", Some(format!("Unknown error happened in salvo.")))
             }
-            Self::Public(msg) => ("public_error", Some(msg.clone())), // You might want a specific key or just pass msg
+            Self::Public(msg) => ("errors.bad_request", Some(msg.clone())),
             Self::Internal(msg) => {
                 tracing::error!(msg = msg, "internal error");
-                ("internal_error", None)
+                ("errors.internal_error", None)
             }
              Self::HttpStatus(e) => {
                  match e.code {
-                     StatusCode::NOT_FOUND => ("not_found", None),
-                     StatusCode::BAD_REQUEST => ("bad_request", None),
-                     _ => ("unknown_error", Some(e.brief.clone()))
+                     StatusCode::NOT_FOUND => ("errors.not_found", None),
+                     StatusCode::BAD_REQUEST => ("errors.bad_request", None),
+                     StatusCode::UNAUTHORIZED => ("errors.unauthorized", None),
+                     StatusCode::FORBIDDEN => ("errors.forbidden", None),
+                     StatusCode::CONFLICT => ("errors.conflict", None),
+                     _ => ("errors.unknown_error", Some(e.brief.clone()))
                  }
              },
-             Self::Validation(e) => ("validation_error", Some(e.to_string())),
-            _ => ("unknown_error", Some(self.to_string())),
+             Self::Validation(e) => ("errors.validation_error", Some(e.to_string())),
+            _ => ("errors.unknown_error", Some(self.to_string())),
         };
         
-        // If it's a public error with a custom message, we might return it directly or try to translate if it's a key
-        // For simplicity, if it's "public_error", we use the details as the message (assuming it's already a message)
-        // Or if the details match a key, we translate it.
         
-        let message = if key == "public_error" {
-             details.unwrap_or_default()
-        } else {
-             let mut msg = translator.get(key, lang).to_string();
-             if let Some(d) = details {
-                 if key == "validation_error" {
-                     msg = format!("{}: {}", msg, d);
-                 } else if key == "unknown_error" {
-                      msg = format!("{}: {}", msg, d);
-                 }
-             }
-             msg
-        };
+        let mut message = translator.get(key, lang).to_string();
+        if let Some(d) = details {
+            if key == "errors.validation_error" || key == "errors.unknown_error" {
+                message = format!("{}: {}", message, d);
+            }
+        }
+
 
         // We can return a consistent JSON structure
         #[derive(serde::Serialize, ToSchema)]
