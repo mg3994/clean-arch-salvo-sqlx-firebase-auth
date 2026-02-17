@@ -1,20 +1,7 @@
-use salvo::cors::{Cors, CorsHandler};
-use salvo::http::Method;
-use salvo::prelude::*;
+pub mod cors;
+pub mod auth;
+pub mod errors;
 
-pub fn cors_hoop() -> CorsHandler {
-    Cors::new()
-        .allow_origin("*")
-        .allow_methods(vec![Method::GET, Method::POST, Method::PUT, Method::DELETE])
-        .allow_headers("*")
-        .into_handler()
-}
-
-#[handler]
-pub async fn error_404(res: &mut Response) {
-    res.status_code(StatusCode::NOT_FOUND);
-    res.render(Json(serde_json::json!({
-        "code": 404,
-        "message": "Not Found"
-    })));
-}
+pub use cors::cors_middleware;
+pub use auth::{jwt_auth_handler, auth_db_rls_middleware, DbRlsMiddleware};
+pub use errors::error_404;

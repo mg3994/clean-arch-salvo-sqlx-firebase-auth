@@ -32,7 +32,7 @@ async fn main() {
     // Create service with routers and hoops
     let service = Service::new(router::root())
         .catcher(Catcher::default().hoop(middleware::error_404))
-        .hoop(middleware::cors_hoop());
+        .hoop(middleware::cors_middleware());
 
     println!("🔄 listen on {}", &cfg.listen_addr);
     println!("Debug: TLS config is {:?}", cfg.tls);

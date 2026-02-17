@@ -113,3 +113,10 @@ impl EndpointOutRegister for AppError {
         );
     }
 }
+
+pub type AppResult<T> = Result<T, AppError>;
+pub type JsonResult<T> = Result<Json<T>, AppError>;
+
+pub fn json_ok<T>(data: T) -> JsonResult<T> {
+    Ok(Json(data))
+}
