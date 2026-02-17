@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
-use crate::core::entities::{User, Gender};
+use crate::core::entities::{Gender, FullUserRecord, Session};
 
 use salvo::oapi::ToSchema;
 
@@ -32,8 +32,8 @@ pub struct FirebaseLoginResponse {
 }
 
 pub struct AuthenticationResult {
-    pub user: User,
-    pub session_id: Uuid,
+    pub user: FullUserRecord,
+    pub session: Session,
     pub jwt_token: String,
     pub exp: DateTime<Utc>,
     pub current_provider_name: String,

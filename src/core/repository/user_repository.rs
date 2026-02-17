@@ -36,6 +36,7 @@ pub trait UserRepository: Send + Sync {
         firebase_uid: &str,
         display_name: Option<String>,
         avatar_url: Option<String>,
+        phone_number: Option<String>,
         identities: Vec<AuthIdentity>,
     ) -> Result<FullUserRecord>;
 }

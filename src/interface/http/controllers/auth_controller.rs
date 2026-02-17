@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use cookie::Cookie;
-use salvo::oapi::extract::*;
 use salvo::prelude::*;
+use salvo::oapi::extract::*;
 
 use crate::application::auth::{
     AuthenticateFirebaseUseCase, FirebaseLoginRequest, FirebaseLoginResponse
@@ -19,14 +19,13 @@ pub async fn post_authenticate(
 ) -> JsonResult<FirebaseLoginResponse> {
     let idata = idata.into_inner();
     
-    // 1. Initialize dependencies
-    // In a full DI container setup, these would be injected.
-    // For now, we instantiate them with the global pool.
+    // 1. Initialize dependencies (Adapters)
     let pool = persistence::pool();
-    let user_repo = Arc::new(PostgresUserRepository::new(pool));
-    let session_repo = Arc::new(PostgresSessionRepository::new(pool));
+    let user_repo = Arc::new(PostgresUserRepository { pool });
+    let session_repo = Arc::new(PostgresSessionRepository { pool });
+    let auth_service = Arc::new(crate::infrastructure::external::firebase_adapter::FirebaseAdapter);
     
-    let use_case = AuthenticateFirebaseUseCase::new(user_repo, session_repo);
+    let use_case = AuthenticateFirebaseUseCase::new(user_repo, session_repo, auth_service);
 
     // 2. Extract request metadata
     let user_agent = idata.user_agent.clone().or_else(|| {
@@ -41,10 +40,10 @@ pub async fn post_authenticate(
     // 3. Execute Use Case
     let result = use_case.execute(
         &idata.id_token,
-        &idata.device_id,
-        idata.fcm_token,
-        &user_agent,
-        &ip_address
+        idata.device_id.clone(),
+        idata.fcm_token.clone(),
+        user_agent,
+        ip_address
     )
     .await
     .map_err(|e| StatusError::unauthorized().brief(e.to_string()))?;
@@ -61,7 +60,7 @@ pub async fn post_authenticate(
     let resp = FirebaseLoginResponse {
         id: result.user.id,
         firebase_uid: result.user.firebase_uid,
-        session_id: result.session_id,
+        session_id: result.session.id,
         username: result.user.username,
         display_name: result.user.display_name,
         bio: result.user.bio,

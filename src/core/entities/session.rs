@@ -1,10 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
-/// User session entity
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+/// User session entity (Pure Domain Model)
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub id: Uuid,
     pub user_id: Uuid,
@@ -19,7 +18,7 @@ pub struct Session {
 }
 
 /// Input data for creating/updating a session
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInput {
     pub user_id: Uuid,
     pub device_id: String,

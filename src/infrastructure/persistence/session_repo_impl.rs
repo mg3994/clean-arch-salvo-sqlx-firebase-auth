@@ -1,25 +1,20 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use sqlx::PgPool;
+use sqlx::{self, PgPool};
 use uuid::Uuid;
 
 use crate::core::entities::{Session, SessionInput};
 use crate::core::repository::SessionRepository;
+use crate::infrastructure::persistence::models::SessionRow;
 
 pub struct PostgresSessionRepository {
-    pool: &'static PgPool,
-}
-
-impl PostgresSessionRepository {
-    pub fn new(pool: &'static PgPool) -> Self {
-        Self { pool }
-    }
+    pub pool: &'static PgPool,
 }
 
 #[async_trait]
 impl SessionRepository for PostgresSessionRepository {
     async fn get_active_session(&self, session_id: &Uuid) -> Result<Option<Session>> {
-        let session = sqlx::query_as::<_, Session>(
+        let session = sqlx::query_as::<_, SessionRow>(
             r#"
             SELECT 
                 id, user_id, device_id, fcm_token, user_agent, ip_address, 
@@ -34,11 +29,11 @@ impl SessionRepository for PostgresSessionRepository {
         .fetch_optional(self.pool)
         .await?;
         
-        Ok(session)
+        Ok(session.map(Into::into))
     }
 
     async fn upsert_session(&self, input: SessionInput) -> Result<Session> {
-        let session = sqlx::query_as::<_, Session>(
+        let session = sqlx::query_as::<_, SessionRow>(
             r#"
             INSERT INTO users_sessions (user_id, device_id, fcm_token, user_agent, ip_address, auth_exp)
             VALUES ($1, $2, $3, $4, $5, $6)
@@ -63,7 +58,7 @@ impl SessionRepository for PostgresSessionRepository {
         .fetch_one(self.pool)
         .await?;
         
-        Ok(session)
+        Ok(session.into())
     }
 
     async fn revoke_session(&self, session_id: &Uuid) -> Result<bool> {
@@ -92,4 +87,3 @@ impl SessionRepository for PostgresSessionRepository {
         Ok(result.rows_affected() as usize)
     }
 }
-

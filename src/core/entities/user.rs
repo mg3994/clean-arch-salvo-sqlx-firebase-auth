@@ -1,12 +1,9 @@
-use chrono::{DateTime, NaiveDate, Utc};
-use salvo::oapi::ToSchema;
 use serde::{Deserialize, Serialize};
-use sqlx::Type;
-use sqlx::prelude::FromRow;
+use chrono::{DateTime, NaiveDate, Utc};
 use uuid::Uuid;
+use salvo::oapi::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type, ToSchema)]
-#[sqlx(type_name = "gender_enum", rename_all = "snake_case")]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Gender {
     Male,
@@ -18,8 +15,8 @@ pub enum Gender {
     Other,
 }
 
-/// Core User entity
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+/// Core User entity (Pure Domain Model)
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct User {
     pub id: Uuid,
     pub firebase_uid: String,
@@ -27,6 +24,7 @@ pub struct User {
     pub display_name: Option<String>,
     pub bio: Option<String>,
     pub avatar_url: Option<String>,
+    pub phone_number: Option<String>,
     pub gender: Option<Gender>,
     pub dob: Option<NaiveDate>,
     pub embedding_dirty: bool,
@@ -35,8 +33,8 @@ pub struct User {
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
-/// Full user record with username join
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+/// Full user record with username join (Domain Model)
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct FullUserRecord {
     pub id: Uuid,
     pub firebase_uid: String,
@@ -44,6 +42,7 @@ pub struct FullUserRecord {
     pub display_name: Option<String>,
     pub bio: Option<String>,
     pub avatar_url: Option<String>,
+    pub phone_number: Option<String>,
     pub gender: Option<Gender>,
     pub dob: Option<NaiveDate>,
     pub embedding_dirty: bool,
@@ -53,16 +52,10 @@ pub struct FullUserRecord {
 }
 
 /// Authentication identity for a user
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct AuthIdentity {
     pub provider_slug: String,
     pub provider_uid: String,
+    pub identifier: Option<String>,
     pub verified_at: Option<DateTime<Utc>>,
-}
-
-/// Provider type for authentication
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProviderType {
-    pub slug: String,
-    pub name: String,
 }

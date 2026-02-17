@@ -1,39 +1,37 @@
 use anyhow::Result;
 use async_trait::async_trait;
-use sqlx::PgPool;
+use sqlx::{self, PgPool};
 use uuid::Uuid;
 
 use crate::core::entities::{User, FullUserRecord, AuthIdentity};
 use crate::core::repository::UserRepository;
+use crate::infrastructure::persistence::models::{UserRow, FullUserRecordRow, GenderDb};
 
 pub struct PostgresUserRepository {
-    pool: &'static PgPool,
-}
-
-impl PostgresUserRepository {
-    pub fn new(pool: &'static PgPool) -> Self {
-        Self { pool }
-    }
+    pub pool: &'static PgPool,
 }
 
 #[async_trait]
 impl UserRepository for PostgresUserRepository {
     async fn find_by_id(&self, id: &Uuid) -> Result<Option<User>> {
-        let user = sqlx::query_as::<_, User>(
+        let user = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT 
-                id, firebase_uid, username, display_name, bio, avatar_url, 
-                gender as "gender: Gender", dob, embedding_dirty, 
-                created_at, updated_at, deleted_at
-            FROM users
-            WHERE id = $1
+                u.id, u.firebase_uid, un.username, u.display_name, u.bio, u.avatar_url, 
+                ai.identifier as phone_number,
+                u.gender, u.dob, u.embedding_dirty, 
+                u.created_at, u.updated_at, u.deleted_at
+            FROM users u
+            LEFT JOIN usernames un ON u.id = un.user_id
+            LEFT JOIN auth_identities ai ON u.id = ai.user_id AND ai.provider = 'phone'
+            WHERE u.id = $1
             "#,
         )
         .bind(id)
         .fetch_optional(self.pool)
         .await?;
         
-        Ok(user)
+        Ok(user.map(Into::into))
     }
 
     async fn find_by_email(&self, _email: &str) -> Result<Option<User>> {
@@ -41,72 +39,87 @@ impl UserRepository for PostgresUserRepository {
     }
 
     async fn find_by_firebase_uid(&self, firebase_uid: &str) -> Result<Option<User>> {
-        let user = sqlx::query_as::<_, User>(
+        let user = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT 
-                id, firebase_uid, username, display_name, bio, avatar_url, 
-                gender as "gender: Gender", dob, embedding_dirty, 
-                created_at, updated_at, deleted_at
-            FROM users
-            WHERE firebase_uid = $1
+                u.id, u.firebase_uid, un.username, u.display_name, u.bio, u.avatar_url, 
+                ai.identifier as phone_number,
+                u.gender, u.dob, u.embedding_dirty, 
+                u.created_at, u.updated_at, u.deleted_at
+            FROM users u
+            LEFT JOIN usernames un ON u.id = un.user_id
+            LEFT JOIN auth_identities ai ON u.id = ai.user_id AND ai.provider = 'phone'
+            WHERE u.firebase_uid = $1
             "#,
         )
         .bind(firebase_uid)
         .fetch_optional(self.pool)
         .await?;
         
-        Ok(user)
+        Ok(user.map(Into::into))
     }
 
     async fn create(&self, user: User) -> Result<User> {
-        let created = sqlx::query_as::<_, User>(
+        let gender_db: Option<GenderDb> = user.gender.clone().map(Into::into);
+        let created = sqlx::query_as::<_, UserRow>(
             r#"
-            INSERT INTO users (firebase_uid, display_name, avatar_url, gender)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO users (firebase_uid, display_name, avatar_url, gender, bio, dob)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING 
-                id, firebase_uid, username, display_name, bio, avatar_url, 
-                gender as "gender: Gender", dob, embedding_dirty, 
+                id, firebase_uid, NULL as username, display_name, bio, avatar_url,
+                NULL as phone_number,
+                gender, dob, embedding_dirty, 
                 created_at, updated_at, deleted_at
             "#,
         )
         .bind(user.firebase_uid)
         .bind(user.display_name)
         .bind(user.avatar_url)
-        .bind(user.gender)
+        .bind(gender_db)
+        .bind(user.bio)
+        .bind(user.dob)
         .fetch_one(self.pool)
         .await?;
         
-        Ok(created)
+        Ok(created.into())
     }
 
     async fn update(&self, user: User) -> Result<User> {
-        let updated = sqlx::query_as::<_, User>(
+        let gender_db: Option<GenderDb> = user.gender.clone().map(Into::into);
+        let updated = sqlx::query_as::<_, UserRow>(
             r#"
-            UPDATE users
-            SET 
-                display_name = $2,
-                avatar_url = $3,
-                gender = $4,
-                dob = $5,
-                bio = $6,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $1
-            RETURNING 
-                id, firebase_uid, username, display_name, bio, avatar_url, 
-                gender as "gender: Gender", dob, embedding_dirty, 
-                created_at, updated_at, deleted_at
+            WITH updated_user AS (
+                UPDATE users
+                SET 
+                    display_name = $2,
+                    avatar_url = $3,
+                    gender = $4,
+                    dob = $5,
+                    bio = $6,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = $1
+                RETURNING *
+            )
+            SELECT 
+                u.id, u.firebase_uid, un.username, u.display_name, u.bio, u.avatar_url, 
+                ai.identifier as phone_number,
+                u.gender, u.dob, u.embedding_dirty, 
+                u.created_at, u.updated_at, u.deleted_at
+            FROM updated_user u
+            LEFT JOIN usernames un ON u.id = un.user_id
+            LEFT JOIN auth_identities ai ON u.id = ai.user_id AND ai.provider = 'phone'
             "#,
         )
         .bind(user.id)
         .bind(user.display_name)
         .bind(user.avatar_url)
-        .bind(user.gender)
+        .bind(gender_db)
         .bind(user.dob)
         .bind(user.bio)
         .fetch_one(self.pool)
         .await?;
         
-        Ok(updated)
+        Ok(updated.into())
     }
 
     async fn delete(&self, id: &Uuid) -> Result<bool> {
@@ -123,33 +136,36 @@ impl UserRepository for PostgresUserRepository {
         firebase_uid: &str,
         display_name: Option<String>,
         avatar_url: Option<String>,
+        phone_number: Option<String>,
         identities: Vec<AuthIdentity>,
     ) -> Result<FullUserRecord> {
         let mut tx = self.pool.begin().await?;
 
-        // 1. Upsert User
-        let user_record = sqlx::query_as::<_, FullUserRecord>(
+        // 1. Upsert User (No phone_number column here)
+        let row = sqlx::query_as::<_, FullUserRecordRow>(
             r#"
             WITH upserted_user AS (
                 INSERT INTO users (firebase_uid, display_name, avatar_url)
                 VALUES ($1, $2, $3)
                 ON CONFLICT (firebase_uid) DO UPDATE
-                SET firebase_uid = EXCLUDED.firebase_uid
+                SET 
+                    firebase_uid = EXCLUDED.firebase_uid
                 RETURNING *
             )
             SELECT
                 u.id,
                 u.firebase_uid,
                 u.display_name,
-                un.username AS "username?",
+                un.username,
                 u.bio,
                 u.avatar_url,
-                u.gender AS "gender: Gender",
+                u.gender,
                 u.dob,
                 u.embedding_dirty,
                 u.created_at,
                 u.updated_at,
-                u.deleted_at
+                u.deleted_at,
+                CAST(NULL AS TEXT) as phone_number
             FROM upserted_user u
             LEFT JOIN usernames un ON u.id = un.user_id
             "#,
@@ -161,7 +177,7 @@ impl UserRepository for PostgresUserRepository {
         .await?;
 
         // 2. Establish RLS Session
-        let current_user_id = user_record.id.to_string();
+        let current_user_id = row.id.to_string();
         sqlx::query("SELECT set_config('app.current_user_id', $1, true)")
             .bind(&current_user_id)
             .execute(&mut *tx)
@@ -171,15 +187,18 @@ impl UserRepository for PostgresUserRepository {
         for identity in identities {
             sqlx::query(
                 r#"
-                INSERT INTO auth_identities (user_id, provider, provider_uid, verified_at)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO auth_identities (user_id, provider, provider_uid, identifier, verified_at)
+                VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (provider, provider_uid) DO UPDATE
-                SET verified_at = COALESCE(auth_identities.verified_at, EXCLUDED.verified_at)
+                SET 
+                    identifier = EXCLUDED.identifier,
+                    verified_at = COALESCE(auth_identities.verified_at, EXCLUDED.verified_at)
                 "#,
             )
-            .bind(user_record.id)
+            .bind(row.id)
             .bind(identity.provider_slug)
             .bind(identity.provider_uid)
+            .bind(identity.identifier)
             .bind(identity.verified_at)
             .execute(&mut *tx)
             .await?;
@@ -187,7 +206,9 @@ impl UserRepository for PostgresUserRepository {
 
         tx.commit().await?;
 
+        let mut user_record = FullUserRecord::from(row);
+        user_record.phone_number = phone_number; // Use the one we just verified/synced
+
         Ok(user_record)
     }
 }
-

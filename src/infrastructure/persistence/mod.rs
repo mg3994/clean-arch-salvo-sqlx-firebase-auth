@@ -5,6 +5,7 @@ use crate::infrastructure::config::DbConfig;
 
 pub mod user_repo_impl;
 pub mod session_repo_impl;
+pub mod models;
 
 pub use user_repo_impl::PostgresUserRepository;
 pub use session_repo_impl::PostgresSessionRepository;
