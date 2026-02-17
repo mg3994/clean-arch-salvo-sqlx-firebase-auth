@@ -1,0 +1,31 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2024"
+readme = "./README.md"
+
+[dependencies]
+anyhow = "1.0.101"
+argon2 = "0.5.3"
+askama = "0.15.4"
+chrono = { version = "0.4.43", features = ["serde"] }
+cookie = "0.18.1"
+dotenvy = "0.15.7"
+figment = { version = "0.10.19", features = ["env", "toml"] }
+firebase-admin-sdk = { version = "0.2.4", features = ["auth", "messaging"] }
+jsonwebtoken = { version = "10.3.0", features = ["rust_crypto"] }
+rand = "0.10.0"
+rust-embed = "8.11.0"
+rustls = { version = "0.23", features = ["ring"] }
+salvo = { version = "0.89.1", features = ["anyhow", "cookie", "cors", "jwt-auth", "oapi", "serve-static", "rustls", "logging", "test", "quinn"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "macros", "postgres", "uuid", "chrono", "json"] }
+thiserror = "2.0.18"
+time = "0.3.47"
+tokio = { version = "1.49.0", features = ["full"] }
+tracing = "0.1.44"
+tracing-appender = "0.2.4"
+tracing-subscriber = { version = "0.3.22", features = ["std", "fmt", "env-filter", "tracing-log", "time", "local-time", "json"] }
+uuid = { version = "1.21.0", features = ["serde", "v7", "std"] }
+validator = { version = "0.20.0", features = ["derive"] }
