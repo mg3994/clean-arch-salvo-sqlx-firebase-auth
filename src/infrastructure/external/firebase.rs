@@ -1,4 +1,4 @@
-use std::sync::OnceLock;
+// Firebase initialization logic
 use crate::infrastructure::config::FirebaseAdminConfig;
 use firebase_admin_sdk::{FirebaseApp, yup_oauth2};
 
@@ -17,11 +17,8 @@ use firebase_admin_sdk::{FirebaseApp, yup_oauth2};
 // console.log("User logged out");
 // });
 
-// Firebase Admin SDK
-pub static FIREBASE_ADMIN: OnceLock<FirebaseApp> = OnceLock::new();
-
 /// Initialize Firebase Admin SDK with service account JSON
-pub async fn init(config: &FirebaseAdminConfig) {
+pub async fn init(config: &FirebaseAdminConfig) -> Option<FirebaseApp> {
     // Load the service account key (e.g., from a file)
     if let Some(firebase_service_account_path) = &config.service_account_path {
         // Load the service account key (JSON)
@@ -31,17 +28,10 @@ pub async fn init(config: &FirebaseAdminConfig) {
                 .expect("Failed to read Firebase service account file");
 
         // Initialize FirebaseApp
-        let app = FirebaseApp::new(service_account_key);
-        // Option 1: safer manual check
-        if crate::infrastructure::external::firebase::FIREBASE_ADMIN.set(app).is_err() {
-            println!("Firebase Admin already initialized, skipping");
-        }
+        Some(FirebaseApp::new(service_account_key))
+    } else {
+        None
     }
-}
-
-/// Get global Firebase Admin instance
-pub fn firebase_admin() -> &'static FirebaseApp {
-    FIREBASE_ADMIN.get().expect("Firebase Admin is not initialized")
 }
 
 // Firebase features configuration

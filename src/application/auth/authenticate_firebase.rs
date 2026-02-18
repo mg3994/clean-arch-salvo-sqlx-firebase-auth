@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use anyhow::Result;
 use chrono::Utc;
 
 use crate::core::entities::{AuthIdentity, SessionInput};
@@ -7,11 +6,15 @@ use crate::core::repository::{UserRepository, SessionRepository};
 use crate::core::services::AuthService;
 use crate::infrastructure::auth::generate_jwt_token;
 use crate::application::auth::dtos::AuthenticationResult;
+use crate::core::errors::AppResult;
+
+use crate::infrastructure::config::JwtConfig;
 
 pub struct AuthenticateFirebaseUseCase {
     user_repo: Arc<dyn UserRepository>,
     session_repo: Arc<dyn SessionRepository>,
     auth_service: Arc<dyn AuthService>,
+    jwt_config: JwtConfig,
 }
 
 impl AuthenticateFirebaseUseCase {
@@ -19,11 +22,13 @@ impl AuthenticateFirebaseUseCase {
         user_repo: Arc<dyn UserRepository>,
         session_repo: Arc<dyn SessionRepository>,
         auth_service: Arc<dyn AuthService>,
+        jwt_config: JwtConfig,
     ) -> Self {
         Self {
             user_repo,
             session_repo,
             auth_service,
+            jwt_config,
         }
     }
 
@@ -34,7 +39,7 @@ impl AuthenticateFirebaseUseCase {
         fcm_token: Option<String>,
         user_agent: String,
         ip_address: String,
-    ) -> Result<AuthenticationResult> {
+    ) -> AppResult<AuthenticationResult> {
         // 1. Verify Firebase Token via AuthService Port
         let external_user = self.auth_service.verify_token(id_token).await?;
 
@@ -70,7 +75,13 @@ impl AuthenticateFirebaseUseCase {
         let session = self.session_repo.upsert_session(session_input).await?;
 
         // 5. Generate Internal JWT
-        let (token, expiry) = generate_jwt_token(full_user.id, session.id, Some(external_user.expiration))?;
+        let (token, expiry) = generate_jwt_token(
+            full_user.id, 
+            session.id, 
+            &self.jwt_config.secret,
+            self.jwt_config.expiry,
+            Some(external_user.expiration)
+        )?;
 
         Ok(AuthenticationResult {
             user: full_user,

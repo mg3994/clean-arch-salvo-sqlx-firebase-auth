@@ -4,11 +4,10 @@ use salvo::prelude::*;
 use salvo::oapi::extract::*;
 
 use crate::application::auth::{
-    AuthenticateFirebaseUseCase, FirebaseLoginRequest, FirebaseLoginResponse
+    FirebaseLoginRequest, FirebaseLoginResponse
 };
-use crate::infrastructure::persistence::{PostgresUserRepository, PostgresSessionRepository};
-use crate::infrastructure::persistence;
-use crate::core::errors::{json_ok, JsonResult};
+use crate::infrastructure::container::AppContainer;
+use crate::core::errors::{AppError, AppResult};
 use crate::{utils};
 
 #[endpoint(tags("auth"))]
@@ -16,16 +15,16 @@ pub async fn post_authenticate(
     idata: JsonBody<FirebaseLoginRequest>,
     req: &mut Request,
     res: &mut Response,
-) -> JsonResult<FirebaseLoginResponse> {
+    dep: &mut Depot,
+) -> AppResult<Json<FirebaseLoginResponse>> {
     let idata = idata.into_inner();
     
-    // 1. Initialize dependencies (Adapters)
-    let pool = persistence::pool();
-    let user_repo = Arc::new(PostgresUserRepository { pool });
-    let session_repo = Arc::new(PostgresSessionRepository { pool });
-    let auth_service = Arc::new(crate::infrastructure::external::firebase_adapter::FirebaseAdapter);
+    // 1. Get dependencies from DI container
+    let container = dep.obtain::<Arc<AppContainer>>().map_err(|_| {
+        AppError::internal("DI error: AppContainer not found in Depot")
+    })?;
     
-    let use_case = AuthenticateFirebaseUseCase::new(user_repo, session_repo, auth_service);
+    let use_case = &container.authenticate_firebase_use_case;
 
     // 2. Extract request metadata
     let user_agent = idata.user_agent.clone().or_else(|| {
@@ -45,8 +44,7 @@ pub async fn post_authenticate(
         user_agent,
         ip_address
     )
-    .await
-    .map_err(|e| StatusError::unauthorized().brief(e.to_string()))?;
+    .await?;
 
     // 4. Set Cookie
     let cookie = Cookie::build(("jwt_token", result.jwt_token.clone()))
@@ -74,5 +72,5 @@ pub async fn post_authenticate(
         exp: result.exp,
     };
 
-    json_ok(resp)
+    Ok(Json(resp))
 }

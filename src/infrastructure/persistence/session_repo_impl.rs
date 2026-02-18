@@ -1,19 +1,19 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use sqlx::{self, PgPool};
 use uuid::Uuid;
 
 use crate::core::entities::{Session, SessionInput};
 use crate::core::repository::SessionRepository;
+use crate::core::errors::{AppError, AppResult};
 use crate::infrastructure::persistence::models::SessionRow;
 
 pub struct PostgresSessionRepository {
-    pub pool: &'static PgPool,
+    pub pool: PgPool,
 }
 
 #[async_trait]
 impl SessionRepository for PostgresSessionRepository {
-    async fn get_active_session(&self, session_id: &Uuid) -> Result<Option<Session>> {
+    async fn get_active_session(&self, session_id: &Uuid) -> AppResult<Option<Session>> {
         let session = sqlx::query_as::<_, SessionRow>(
             r#"
             SELECT 
@@ -26,13 +26,14 @@ impl SessionRepository for PostgresSessionRepository {
             "#,
         )
         .bind(session_id)
-        .fetch_optional(self.pool)
-        .await?;
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(session.map(Into::into))
     }
 
-    async fn upsert_session(&self, input: SessionInput) -> Result<Session> {
+    async fn upsert_session(&self, input: SessionInput) -> AppResult<Session> {
         let session = sqlx::query_as::<_, SessionRow>(
             r#"
             INSERT INTO users_sessions (user_id, device_id, fcm_token, user_agent, ip_address, auth_exp)
@@ -55,34 +56,38 @@ impl SessionRepository for PostgresSessionRepository {
         .bind(input.user_agent)
         .bind(input.ip_address)
         .bind(input.auth_exp)
-        .fetch_one(self.pool)
-        .await?;
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(session.into())
     }
 
-    async fn revoke_session(&self, session_id: &Uuid) -> Result<bool> {
+    async fn revoke_session(&self, session_id: &Uuid) -> AppResult<bool> {
         let result = sqlx::query("UPDATE users_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE id = $1")
             .bind(session_id)
-            .execute(self.pool)
-            .await?;
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(result.rows_affected() > 0)
     }
 
-    async fn revoke_all_user_sessions(&self, user_id: &Uuid) -> Result<usize> {
+    async fn revoke_all_user_sessions(&self, user_id: &Uuid) -> AppResult<usize> {
         let result = sqlx::query("UPDATE users_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = $1 AND revoked_at IS NULL")
             .bind(user_id)
-            .execute(self.pool)
-            .await?;
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(result.rows_affected() as usize)
     }
 
-    async fn delete_expired_sessions(&self) -> Result<usize> {
+    async fn delete_expired_sessions(&self) -> AppResult<usize> {
         let result = sqlx::query("DELETE FROM users_sessions WHERE auth_exp < CURRENT_TIMESTAMP OR revoked_at < CURRENT_TIMESTAMP - INTERVAL '30 days'")
-            .execute(self.pool)
-            .await?;
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(result.rows_affected() as usize)
     }

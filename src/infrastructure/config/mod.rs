@@ -1,4 +1,3 @@
-use std::sync::OnceLock;
 
 use figment::Figment;
 use figment::providers::{Env, Format, Toml};
@@ -14,9 +13,7 @@ pub use db_config::DbConfig;
 pub use crate::infrastructure::config::firebase_admin_config::FirebaseAdminConfig;
 pub use crate::infrastructure::config::firebase_web_config::FirebaseWebConfig;
 
-pub static CONFIG: OnceLock<ServerConfig> = OnceLock::new();
-
-pub fn init() {
+pub fn init() -> ServerConfig {
     let raw_config = Figment::new()
         .merge(Toml::file(
             std::env::var("APP_CONFIG").as_deref().unwrap_or("config.toml"),
@@ -37,12 +34,7 @@ pub fn init() {
         eprintln!("DATABASE_URL is not set");
         std::process::exit(1);
     }
-    crate::infrastructure::config::CONFIG
-        .set(config)
-        .expect("config should be set");
-}
-pub fn get() -> &'static ServerConfig {
-    CONFIG.get().expect("config should be set")
+    config
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -50,13 +42,18 @@ pub struct ServerConfig {
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
 
+    #[serde(default = "default_locale")]
+    pub default_locale: String,
+
+    #[serde(default = "default_locale")]
+    pub fallback_locale: String,
+
     pub db: DbConfig,
     pub log: LogConfig,
     pub jwt: JwtConfig,
     pub tls: Option<TlsConfig>,
 
     pub firebase: FirebaseConfig,
-
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -87,4 +84,8 @@ pub fn default_true() -> bool {
 
 fn default_listen_addr() -> String {
     "127.0.0.1:8008".into()
+}
+
+fn default_locale() -> String {
+    "en".into()
 }

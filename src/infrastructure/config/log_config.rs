@@ -1,9 +1,4 @@
 use serde::Deserialize;
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::fmt;
-
-use tracing_appender::rolling;
-
 use super::default_true;
 
 const FORMAT_PRETTY: &str = "pretty";
@@ -145,92 +140,5 @@ impl LogConfig {
     pub fn with_source_location(mut self, with_source_location: bool) -> Self {
         self.with_source_location = with_source_location;
         self
-    }
-
-    /// Init tracing log.
-    ///
-    /// Caller should hold the guard.
-    pub fn guard(&self) -> WorkerGuard {
-        // Tracing appender init.
-        let file_appender = match &*self.rolling {
-            "minutely" => rolling::minutely(&self.directory, &self.file_name),
-            "hourly" => rolling::hourly(&self.directory, &self.file_name),
-            "daily" => rolling::daily(&self.directory, &self.file_name),
-            "never" => rolling::never(&self.directory, &self.file_name),
-            _ => rolling::never(&self.directory, &self.file_name),
-        };
-        let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
-
-        // Tracing subscriber init.
-        let subscriber = tracing_subscriber::fmt()
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or(tracing_subscriber::EnvFilter::new(&self.filter_level)),
-            )
-            .with_ansi(self.with_ansi);
-
-         if self.format == FORMAT_PRETTY {
-            let subscriber = subscriber.event_format(
-                fmt::format()
-                    .pretty()
-                    .with_level(self.with_level)
-                    .with_target(self.with_target)
-                    .with_thread_ids(self.with_thread_ids)
-                    .with_thread_names(self.with_thread_names)
-                    .with_source_location(self.with_source_location),
-            );
-            if self.stdout {
-                subscriber.with_writer(std::io::stdout).init();
-            } else {
-                subscriber.with_writer(file_writer).init();
-            }
-        } else if self.format == FORMAT_COMPACT {
-            let subscriber = subscriber.event_format(
-                fmt::format()
-                    .compact()
-                    .with_level(self.with_level)
-                    .with_target(self.with_target)
-                    .with_thread_ids(self.with_thread_ids)
-                    .with_thread_names(self.with_thread_names)
-                    .with_source_location(self.with_source_location),
-            );
-            if self.stdout {
-                subscriber.with_writer(std::io::stdout).init();
-            } else {
-                subscriber.with_writer(file_writer).init();
-            }
-        } else if self.format == FORMAT_JSON {
-            let subscriber = subscriber.event_format(
-                fmt::format()
-                    .json()
-                    .with_level(self.with_level)
-                    .with_target(self.with_target)
-                    .with_thread_ids(self.with_thread_ids)
-                    .with_thread_names(self.with_thread_names)
-                    .with_source_location(self.with_source_location),
-            );
-            if self.stdout {
-                subscriber.json().with_writer(std::io::stdout).init();
-            } else {
-                subscriber.json().with_writer(file_writer).init();
-            }
-        } else {
-            // FORMAT_FULL or fallback
-            let subscriber = subscriber.event_format(
-                fmt::format()
-                    .with_level(self.with_level)
-                    .with_target(self.with_target)
-                    .with_thread_ids(self.with_thread_ids)
-                    .with_thread_names(self.with_thread_names)
-                    .with_source_location(self.with_source_location),
-            );
-            if self.stdout {
-                subscriber.with_writer(std::io::stdout).init();
-            } else {
-                subscriber.with_writer(file_writer).init();
-            }
-        }
-
-        guard
     }
 }

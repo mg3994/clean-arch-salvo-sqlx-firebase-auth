@@ -1,19 +1,19 @@
-use anyhow::Result;
 use async_trait::async_trait;
 use sqlx::{self, PgPool};
 use uuid::Uuid;
 
 use crate::core::entities::{User, FullUserRecord, AuthIdentity};
 use crate::core::repository::UserRepository;
+use crate::core::errors::{AppError, AppResult};
 use crate::infrastructure::persistence::models::{UserRow, FullUserRecordRow, GenderDb};
 
 pub struct PostgresUserRepository {
-    pub pool: &'static PgPool,
+    pub pool: PgPool,
 }
 
 #[async_trait]
 impl UserRepository for PostgresUserRepository {
-    async fn find_by_id(&self, id: &Uuid) -> Result<Option<User>> {
+    async fn find_by_id(&self, id: &Uuid) -> AppResult<Option<User>> {
         let user = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT 
@@ -28,17 +28,18 @@ impl UserRepository for PostgresUserRepository {
             "#,
         )
         .bind(id)
-        .fetch_optional(self.pool)
-        .await?;
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(user.map(Into::into))
     }
 
-    async fn find_by_email(&self, _email: &str) -> Result<Option<User>> {
+    async fn find_by_email(&self, _email: &str) -> AppResult<Option<User>> {
         Ok(None)
     }
 
-    async fn find_by_firebase_uid(&self, firebase_uid: &str) -> Result<Option<User>> {
+    async fn find_by_firebase_uid(&self, firebase_uid: &str) -> AppResult<Option<User>> {
         let user = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT 
@@ -53,13 +54,14 @@ impl UserRepository for PostgresUserRepository {
             "#,
         )
         .bind(firebase_uid)
-        .fetch_optional(self.pool)
-        .await?;
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(user.map(Into::into))
     }
 
-    async fn create(&self, user: User) -> Result<User> {
+    async fn create(&self, user: User) -> AppResult<User> {
         let gender_db: Option<GenderDb> = user.gender.clone().map(Into::into);
         let created = sqlx::query_as::<_, UserRow>(
             r#"
@@ -78,13 +80,14 @@ impl UserRepository for PostgresUserRepository {
         .bind(gender_db)
         .bind(user.bio)
         .bind(user.dob)
-        .fetch_one(self.pool)
-        .await?;
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(created.into())
     }
 
-    async fn update(&self, user: User) -> Result<User> {
+    async fn update(&self, user: User) -> AppResult<User> {
         let gender_db: Option<GenderDb> = user.gender.clone().map(Into::into);
         let updated = sqlx::query_as::<_, UserRow>(
             r#"
@@ -116,17 +119,19 @@ impl UserRepository for PostgresUserRepository {
         .bind(gender_db)
         .bind(user.dob)
         .bind(user.bio)
-        .fetch_one(self.pool)
-        .await?;
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(updated.into())
     }
 
-    async fn delete(&self, id: &Uuid) -> Result<bool> {
+    async fn delete(&self, id: &Uuid) -> AppResult<bool> {
         let result = sqlx::query("UPDATE users SET deleted_at = CURRENT_TIMESTAMP WHERE id = $1")
             .bind(id)
-            .execute(self.pool)
-            .await?;
+            .execute(&self.pool)
+            .await
+            .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         
         Ok(result.rows_affected() > 0)
     }
@@ -138,8 +143,8 @@ impl UserRepository for PostgresUserRepository {
         avatar_url: Option<String>,
         phone_number: Option<String>,
         identities: Vec<AuthIdentity>,
-    ) -> Result<FullUserRecord> {
-        let mut tx = self.pool.begin().await?;
+    ) -> AppResult<FullUserRecord> {
+        let mut tx = self.pool.begin().await.map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
 
         // 1. Upsert User (No phone_number column here)
         let row = sqlx::query_as::<_, FullUserRecordRow>(
@@ -174,14 +179,16 @@ impl UserRepository for PostgresUserRepository {
         .bind(display_name)
         .bind(avatar_url)
         .fetch_one(&mut *tx)
-        .await?;
+        .await
+        .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
 
         // 2. Establish RLS Session
         let current_user_id = row.id.to_string();
         sqlx::query("SELECT set_config('app.current_user_id', $1, true)")
             .bind(&current_user_id)
             .execute(&mut *tx)
-            .await?;
+            .await
+            .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
 
         // 3. Sync Identities
         for identity in identities {
@@ -201,10 +208,11 @@ impl UserRepository for PostgresUserRepository {
             .bind(identity.identifier)
             .bind(identity.verified_at)
             .execute(&mut *tx)
-            .await?;
+            .await
+            .map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
         }
 
-        tx.commit().await?;
+        tx.commit().await.map_err(|e| AppError::internal(format!("Database error: {}", e)))?;
 
         let mut user_record = FullUserRecord::from(row);
         user_record.phone_number = phone_number; // Use the one we just verified/synced

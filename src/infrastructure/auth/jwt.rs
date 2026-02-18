@@ -1,11 +1,10 @@
-use anyhow::Result;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::infrastructure::config;
+use crate::core::errors::{AppError, AppResult};
 
 /// JWT Claims structure with DateTime instead of primitive timestamps
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -23,14 +22,16 @@ pub struct JwtClaims {
 pub fn generate_jwt_token(
     uid: impl Into<Uuid>, 
     sid: impl Into<Uuid>,
+    secret: &str,
+    default_expiry_seconds: i64,
     external_exp: Option<DateTime<Utc>>
-) -> Result<(String, DateTime<Utc>)> {
+) -> AppResult<(String, DateTime<Utc>)> {
     let now = Utc::now();
     
     // Use external expiration if provided (e.g. from Firebase), 
     // otherwise fallback to internal config
     let exp = external_exp.unwrap_or_else(|| {
-        now + chrono::Duration::seconds(config::get().jwt.expiry)
+        now + chrono::Duration::seconds(default_expiry_seconds)
     });
     
     let claims = JwtClaims {
@@ -43,18 +44,18 @@ pub fn generate_jwt_token(
     let token = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(config::get().jwt.secret.as_bytes()),
-    )?;
+        &EncodingKey::from_secret(secret.as_bytes()),
+    ).map_err(|e| AppError::internal(format!("JWT encoding failed: {}", e)))?;
     
     Ok((token, exp))
 }
 
 /// Decode and validate JWT token, returning claims if valid
-pub fn get_token_claims(token: &str) -> Option<JwtClaims> {
+pub fn get_token_claims(token: &str, secret: &str) -> Option<JwtClaims> {
     let validation = Validation::new(Algorithm::HS256);
     decode::<JwtClaims>(
         token,
-        &DecodingKey::from_secret(config::get().jwt.secret.as_bytes()),
+        &DecodingKey::from_secret(secret.as_bytes()),
         &validation,
     )
     .ok()
@@ -63,15 +64,15 @@ pub fn get_token_claims(token: &str) -> Option<JwtClaims> {
 
 /// Fast signature validation check (for UI checks)
 /// Only validates the JWT signature and expiration
-pub fn is_jwt_token_signature_valid(token: &str) -> bool {
-    get_token_claims(token).is_some()
+pub fn is_jwt_token_signature_valid(token: &str, secret: &str) -> bool {
+    get_token_claims(token, secret).is_some()
 }
 
 /// Secure session validation (for API checks)
 /// Validates both signature and checks database session state
-pub async fn is_jwt_session_active(token: &str, pool: &PgPool) -> bool {
+pub async fn is_jwt_session_active(token: &str, secret: &str, pool: &PgPool) -> bool {
     // 1. Validate token signature (checks JWT expiration internally)
-    let claims = match get_token_claims(token) {
+    let claims = match get_token_claims(token, secret) {
         Some(c) => c,
         None => return false,
     };

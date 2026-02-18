@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::core::errors::AppResult;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
@@ -26,5 +26,5 @@ pub struct ExternalIdentity {
 #[async_trait]
 pub trait AuthService: Send + Sync {
     /// Verify an external token and return user information
-    async fn verify_token(&self, id_token: &str) -> Result<ExternalAuthUser>;
+    async fn verify_token(&self, id_token: &str) -> AppResult<ExternalAuthUser>;
 }

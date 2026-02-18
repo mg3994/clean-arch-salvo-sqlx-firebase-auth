@@ -1,7 +1,6 @@
 use rust_embed::Embed;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::OnceLock;
 
 #[derive(Embed)]
 #[folder = "locales/"]
@@ -10,10 +9,24 @@ struct Asset;
 pub struct TranslationService {
     // lang_code -> (key -> message)
     data: HashMap<String, HashMap<String, String>>,
+    default_locale: String,
+    fallback_locale: String,
+}
+
+use crate::core::services::I18nService;
+
+impl I18nService for TranslationService {
+    fn get(&self, key: &str, lang: &str) -> String {
+        self.get(key, lang)
+    }
+
+    fn supported_languages(&self) -> Vec<String> {
+        self.supported_languages()
+    }
 }
 
 impl TranslationService {
-    fn new() -> Self {
+    pub fn new(default_locale: String, fallback_locale: String) -> Self {
         let mut data = HashMap::new();
         
         // Load all locale files
@@ -32,7 +45,7 @@ impl TranslationService {
             }
         }
         
-        Self { data }
+        Self { data, default_locale, fallback_locale }
     }
 
     /// Get a translated message by key and language
@@ -44,15 +57,24 @@ impl TranslationService {
                 return msg.clone();
             }
         }
-        // Fallback to English
-        if lang != "en" {
-            if let Some(messages) = self.data.get("en") {
+        // Fallback 1: Configured default locale
+        if lang != self.default_locale {
+            if let Some(messages) = self.data.get(&self.default_locale) {
                 if let Some(msg) = messages.get(key) {
                     return msg.clone();
                 }
             }
         }
-        // Fallback to key itself if not found
+        // Fallback 2: Configured fallback locale
+        if lang != self.fallback_locale && self.default_locale != self.fallback_locale {
+             if let Some(messages) = self.data.get(&self.fallback_locale) {
+                if let Some(msg) = messages.get(key) {
+                    return msg.clone();
+                }
+            }
+        }
+        
+        // Last resort: Key itself
         key.to_string()
     }
     
@@ -81,10 +103,4 @@ fn flatten_json(prefix: &str, value: &Value, output: &mut HashMap<String, String
         }
         _ => {}
     }
-}
-
-pub static TRANSLATIONS: OnceLock<TranslationService> = OnceLock::new();
-
-pub fn get_translator() -> &'static TranslationService {
-    TRANSLATIONS.get_or_init(TranslationService::new)
 }
